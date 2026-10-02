@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GMDS | Final Master Command Center</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#10b981">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+                    colors: {
+                        primary: '#10b981',
+                        primary_dark: '#047857',
+                        dark: '#0f172a',
+                        accent: '#f59e0b',
+                        background: '#f8fafc'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+        select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.7rem center;
+            background-size: 1em;
+        }
+
+        @keyframes slideIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        @keyframes highlightNew {
+            0% { background-color: #dcfce7; }
+            100% { background-color: transparent; }
+        }
+        .new-order-row { animation: highlightNew 4s ease-out forwards; border-left: 4px solid #10b981 !important; }
+
+        .cancelled-row { background-color: #fff1f2 !important; border-left: 4px solid #ef4444 !important; opacity: 0.85; }
+        .completed-row { border-left: 4px solid #10b981 !important; opacity: 0.7; }
+        .ghost-row { background-color: #fffbeb !important; border-left: 4px dashed #f59e0b !important; opacity: 0.85; }
+
+        textarea:focus { outline: none; border-color: #25D366; box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.15); }
+    </style>
+</head>
+<body class="bg-background text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <audio id="orderAlertSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+
+    <div id="toast-container" class="fixed top-5 right-5 z-[100000] pointer-events-none flex flex-col gap-3"></div>
+
+    <!-- WhatsApp Preview Modal -->
+    <div id="wa-preview-modal" class="fixed inset-0 bg-slate-900/70 backdrop-filter backdrop-blur-md z-50 flex items-center justify-center p-4 hidden transition-opacity duration-300">
+        <div class="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-slide-in border border-slate-200">
+            <div class="bg-slate-50 p-5 flex items-center justify-between border-b border-slate-200">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-full bg-[#25D366]/10 flex items-center justify-center border border-[#25D366]/20">
+                        <i class="fab fa-whatsapp text-[#25D366] text-2xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-extrabold text-base text-slate-800 tracking-wide m-0">WhatsApp Dispatcher</h3>
+                        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 m-0">Smart Routing Engine</p>
+                    </div>
+                </div>
+                <button onclick="closeWaModal()" class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-500 transition-colors flex items-center justify-center border border-transparent hover:border-red-100 cursor-pointer">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 bg-white flex-1 overflow-hidden flex flex-col gap-3">
+                <div class="bg-blue-50 border border-blue-100 text-blue-700 px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2">
+                    <span><i class="fas fa-satellite-dish animate-pulse mr-1"></i> Data mapped successfully</span>
+                    <span class="font-mono text-[10px] bg-blue-200 px-2 py-0.5 rounded text-blue-800" id="wa-target-label">Dispatching to: -</span>
+                </div>
+                <textarea id="wa-text-preview" class="w-full flex-1 min-h-[260px] p-5 text-[13px] font-mono bg-slate-50 text-slate-700 border-2 border-slate-200 rounded-2xl resize-none shadow-inner leading-relaxed" spellcheck="false"></textarea>
+            </div>
+            <div class="p-5 bg-slate-50 border-t border-slate-200 flex gap-3 shrink-0">
+                <button onclick="copyWaText()" class="w-1/3 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl text-sm font-extrabold transition-all hover:bg-slate-100 hover:border-slate-300 flex justify-center items-center gap-2 cursor-pointer active:scale-95">
+                    <i class="fas fa-copy text-slate-400"></i> Copy
+                </button>
+                <button id="btn-wa-direct" class="w-2/3 py-4 bg-[#25D366] text-white rounded-2xl text-sm font-black uppercase tracking-wider transition-all shadow-lg shadow-[#25D366]/30 hover:bg-[#20b958] flex justify-center items-center gap-2 cursor-pointer active:scale-95 border-none">
+                    <i class="fab fa-whatsapp text-xl"></i> Send To Rider
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <header class="bg-dark text-white sticky top-0 z-40 shadow-xl border-b border-white/10">
+        <div class="max-w-[98%] mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary_dark flex items-center justify-center shadow-inner border border-white/20 relative">
+                    <i class="fas fa-satellite-dish text-2xl text-white"></i>
+                    <div class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-dark animate-pulse"></div>
+                </div>
+                <div>
+                    <h1 class="text-lg font-black tracking-wider text-white m-0 leading-tight">GMDS CONTROL HUB</h1>
+                    <p class="text-[10px] text-emerald-400 font-bold tracking-widest uppercase m-0 mt-0.5 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span> Master Sync (Core + Rider DB)
+                    </p>
+                </div>
+            </div>
+
+            <div class="hidden md:flex items-center gap-4">
+                <button id="addMockBtn" class="mr-2 flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 rounded-xl font-bold text-xs transition-colors border border-emerald-500/30">
+                    <i class="fas fa-plus-circle"></i> Test Rider Order
+                </button>
+
+                <div class="text-right mr-4 border-r border-slate-700 pr-5">
+                    <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider m-0">Live System Time</p>
+                    <p class="text-sm font-mono text-emerald-300 font-bold m-0" id="live-clock">--:--:--</p>
+                </div>
+                <div class="flex items-center bg-slate-800/80 rounded-2xl border border-slate-700 p-1 shadow-inner">
+                    <div class="px-5 py-2 text-center border-r border-slate-700">
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider m-0">Total Orders</p>
+                        <p class="text-base font-black text-white m-0" id="stat-total">0</p>
+                    </div>
+                    <div class="px-5 py-2 text-center border-r border-slate-700">
+                        <p class="text-[9px] text-emerald-400/80 font-bold uppercase tracking-wider m-0">Online Paid</p>
+                        <p class="text-base font-black text-emerald-400 m-0" id="stat-paid">0</p>
+                    </div>
+                    <div class="px-5 py-2 text-center">
+                        <p class="text-[9px] text-amber-400/80 font-bold uppercase tracking-wider m-0">Pending</p>
+                        <p class="text-base font-black text-amber-400 m-0" id="stat-pending">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile stats strip -->
+        <div class="md:hidden border-t border-white/10 px-4 py-2 flex items-center justify-around text-center">
+            <div><p class="text-[9px] text-slate-400 font-bold uppercase m-0">Total</p><p class="text-sm font-black text-white m-0" id="stat-total-m">0</p></div>
+            <div><p class="text-[9px] text-emerald-400/80 font-bold uppercase m-0">Paid</p><p class="text-sm font-black text-emerald-400 m-0" id="stat-paid-m">0</p></div>
+            <div><p class="text-[9px] text-amber-400/80 font-bold uppercase m-0">Pending</p><p class="text-sm font-black text-amber-400 m-0" id="stat-pending-m">0</p></div>
+            <button id="addMockBtnM" class="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-lg font-bold text-[10px] border border-emerald-500/30"><i class="fas fa-plus-circle"></i> Test</button>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-[98%] w-full mx-auto px-2 py-6">
+        <div class="bg-white rounded-3xl shadow-md border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-130px)]">
+            <div class="px-6 py-5 border-b border-slate-100 flex flex-col lg:flex-row items-center justify-between gap-4 bg-slate-50 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center border border-blue-200 shadow-sm relative">
+                        <i class="fas fa-stream"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-black text-slate-800 m-0 leading-tight flex items-center gap-2">Master Ecosystem Stream <span class="bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-black animate-pulse">Live</span></h2>
+                        <p class="text-[10px] text-slate-500 font-extrabold mt-0.5 m-0 uppercase tracking-wide" id="db-chips">Connecting...</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5 bg-slate-200/50 p-1.5 rounded-xl border border-slate-200 overflow-x-auto max-w-full" id="filter-bar">
+                    <button class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap" data-filter="all">All <span class="fc opacity-60" id="fc-all"></span></button>
+                    <button class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap" data-filter="pending">Pending <span class="fc opacity-60" id="fc-pending"></span></button>
+                    <button class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap" data-filter="active">Active <span class="fc opacity-60" id="fc-active"></span></button>
+                    <button class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap" data-filter="delivered">Delivered <span class="fc opacity-60" id="fc-delivered"></span></button>
+                    <button class="filter-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap" data-filter="cancelled">Cancelled <span class="fc opacity-60" id="fc-cancelled"></span></button>
+                </div>
+            </div>
+
+            <div class="overflow-auto flex-1 bg-white p-2">
+                <table class="w-full text-left border-collapse whitespace-nowrap lg:whitespace-normal">
+                    <thead class="sticky top-0 z-10 bg-slate-100/90 backdrop-blur-sm rounded-xl">
+                        <tr class="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            <th class="py-4 px-5 rounded-tl-xl w-40">Order ID & Time</th>
+                            <th class="py-4 px-5">Customer Info</th>
+                            <th class="py-4 px-5">Service / Order Details</th>
+                            <th class="py-4 px-5 w-48">Amount & Payment</th>
+                            <th class="py-4 px-5 w-48 text-center">Live Status</th>
+                            <th class="py-4 px-5 text-center w-40 rounded-tr-xl">Action / Dispatch</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersTableBody" class="divide-y divide-slate-100 text-sm">
+                        <tr>
+                            <td colspan="6" class="py-24 text-center">
+                                <i class="fas fa-satellite-dish fa-spin text-4xl text-primary mb-4 block"></i>
+                                <h3 class="text-slate-800 font-black text-lg m-0">Establishing Secure Link...</h3>
+                                <p class="text-slate-400 font-bold text-xs mt-1">Please wait while we sync both databases</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // ==================== FIREBASE CONFIGURATION (DUAL DATABASE) ====================
+
+        // 1. Core Database (Food, Seba, House)
+        const coreConfig = {
+            apiKey: "AIzaSyB5QfUxUOZtQnTuGU-PPR-VdBof2ljO1i0",
+            authDomain: "gmds-super-app.firebaseapp.com",
+            databaseURL: "https://gmds-super-app-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "gmds-super-app",
+            storageBucket: "gmds-super-app.firebasestorage.app",
+            messagingSenderId: "872760042776",
+            appId: "1:872760042776:web:5c64e3a6ce4da6229faa6d"
+        };
+        firebase.initializeApp(coreConfig);
+        const coreDb = firebase.database();
+
+        // 2. Rider Database (Rides & Parcels)
+        const riderConfig = {
+            apiKey: "AIzaSyCTfCfliKdVUM-sq528_VpxJoJaaNWtZRM",
+            authDomain: "gmds-rider.firebaseapp.com",
+            databaseURL: "https://gmds-rider-default-rtdb.firebaseio.com",
+            projectId: "gmds-rider",
+            storageBucket: "gmds-rider.firebasestorage.app",
+            messagingSenderId: "464883988509",
+            appId: "1:464883988509:web:b83fa6199bb9f128c7aef4"
+        };
+        const riderApp = firebase.initializeApp(riderConfig, "RiderApp");
+        const riderDb = riderApp.database();
+
+        // ==================== STATE ====================
+        const DB = {
+            core:  { data: {}, loaded: false, error: null },
+            rider: { data: {}, loaded: false, error: null }
+        };
+        let globalOrdersCache = [];
+        const knownUids = new Set();        // orders already seen (for new-order alerts)
+        const lastSeen = new Map();         // uid -> last known order (safety net)
+        const adminDeleted = new Set();     // uids deleted on purpose from this panel
+        const ghostNotified = new Set();
+        let baselineDone = false;           // true after BOTH databases delivered first data
+        let unreadNewOrders = 0;
+        let currentFilter = 'all';
+
+        const RIDER_WA_NUMBER = "916297474412";
+        const STATUS_OPTIONS = ['Pending', 'Confirmed', 'Accepted', 'PickedUp', 'Out for Delivery', 'Delivered', 'Cancelled'];
+
+        // ==================== HELPERS ====================
+        const esc = v => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const str = v => (v === undefined || v === null) ? '' : String(v).trim();
+        const pick = (...a) => a.find(x => x !== undefined && x !== null && x !== '');
+        const toArray = v => Array.isArray(v) ? v.filter(Boolean) : (v && typeof v === 'object' ? Object.values(v).filter(Boolean) : []);
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bgClass = type === 'error' ? 'bg-red-600' : 'bg-slate-800';
+            const icon = type === 'error' ? 'fa-triangle-exclamation text-red-200' : 'fa-check-circle text-emerald-400';
+            toast.className = `${bgClass} text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 text-xs font-bold transition-all duration-300 transform translate-x-10 opacity-0 border border-white/10`;
+            toast.innerHTML = `<i class="fas ${icon} text-lg"></i> <span>${esc(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-x-10', 'opacity-0'), 10);
+            setTimeout(() => {
+                toast.classList.add('translate-x-10', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function playAlertSound() {
+            const audio = document.getElementById('orderAlertSound');
+            if (audio) {
+                audio.volume = 0.7;
+                audio.currentTime = 0;
+                audio.play().catch(() => console.log("Audio autoplay restricted."));
+            }
+        }
+
+        // Unlock audio on first tap (browser autoplay policy)
+        document.body.addEventListener('click', () => {
+            const a = document.getElementById('orderAlertSound');
+            if (!a) return;
+            a.muted = true;
+            a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; });
+        }, { once: true });
+
+        setInterval(() => {
+            document.getElementById('live-clock').innerText = new Date().toLocaleTimeString('en-IN', { hour12: true });
+        }, 1000);
+
+        // ----- Status logic (one place, used everywhere) -----
+        function statusOf(o) {
+            return str(o.status) || str(o.riderStatus) || 'Pending';
+        }
+        function isCancelledOrder(o) {
+            const flag = o.isCancelled === true || str(o.isCancelled).toLowerCase() === 'true' || o.cancelled === true;
+            return flag || str(o.status).toLowerCase().includes('cancel') || str(o.riderStatus).toLowerCase().includes('cancel');
+        }
+        function statusKey(o) {
+            if (isCancelledOrder(o)) return 'cancelled';
+            const norm = s => s.toLowerCase().replace(/[\s_-]/g, '');
+            const t = norm(statusOf(o));
+            const r = norm(str(o.riderStatus));
+            const done = ['delivered', 'completed', 'complete', 'done'];
+            if (done.includes(t) || (t !== 'pending' && done.includes(r) && !str(o.status))) return 'delivered';
+            if (t === '' || ['pending', 'new', 'placed'].includes(t)) return 'pending';
+            return 'active';
+        }
+
+        // ----- Time -----
+        function orderTime(o) {
+            const c = Number(o.createdAt);
+            if (c > 1e11) return c;
+            const m = str(o.orderId || o.id).match(/\d{12,13}/);
+            if (m) return Number(m[0]);
+            const ts = Number(o.timestamp);
+            if (ts > 1e11) return ts;
+            const d = Date.parse(str(o.time) || str(o.timestamp));
+            return isNaN(d) ? 0 : d;
+        }
+        function dateText(o, t) {
+            const a = str(o.time); if (a) return a;
+            const b = str(o.timestamp); if (b && isNaN(Number(b))) return b;
+            return t ? new Date(t).toLocaleString('en-IN') : 'Time Unknown';
+        }
+
+        // ----- Order kind -----
+        function getKind(o) {
+            if (o.type === 'FoodOrder' || o.items) return 'food';
+            if (o.dbRefType === 'rider' || o.type === 'DeliveryRide' || o.type === 'Parcel Delivery' || o.details) return 'ride';
+            if (o.type === 'HouseService' || o.professional) return 'house';
+            if (o.type === 'DigitalSeba' || o.category) return 'seba';
+            return 'other';
+        }
+
+        // ==================== REAL-TIME DUAL ENGINE ====================
+        function listen(ref, key, label) {
+            ref.on('value', snap => {
+                DB[key].data = snap.val() || {};
+                DB[key].loaded = true;
+                DB[key].error = null;
+                processMergedData();
+            }, err => {
+                DB[key].loaded = true;
+                DB[key].error = (err && err.message) ? err.message : String(err);
+                showToast(`${label} database read failed: ${DB[key].error}`, 'error');
+                processMergedData();
+            });
+        }
+        listen(coreDb.ref('all_orders'), 'core', 'Core');
+        listen(riderDb.ref('delivery_orders'), 'rider', 'Rider');
+
+        function resetUnread() {
+            unreadNewOrders = 0;
+            document.title = "GMDS | Final Master Command Center";
+        }
+        window.addEventListener('focus', resetUnread);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) resetUnread(); });
+
+        function addFrom(src, type, path, list) {
+            if (!src || typeof src !== 'object') return;
+            Object.keys(src).forEach(key => {
+                const v = src[key];
+                if (v === null || typeof v !== 'object') return;
+                // our fields come LAST so data inside the order can never override them
+                list.push({ ...v, id: key, uid: type + ':' + key, dbRefType: type, dbPath: path });
+            });
+        }
+
+        function processMergedData() {
+            const list = [];
+            addFrom(DB.core.data, 'core', 'all_orders', list);
+            addFrom(DB.rider.data, 'rider', 'delivery_orders', list);
+
+            const coreCount = list.filter(o => o.dbRefType === 'core').length;
+            const riderCount = list.length - coreCount;
+
+            // Safety net: if an order disappears from the database without being deleted here, keep showing it
+            const present = new Set(list.map(o => o.uid));
+            list.forEach(o => lastSeen.set(o.uid, o));
+            lastSeen.forEach((o, uid) => {
+                if (present.has(uid)) { ghostNotified.delete(uid); return; }
+                if (adminDeleted.has(uid)) { lastSeen.delete(uid); return; }
+                if (!DB[o.dbRefType].loaded || DB[o.dbRefType].error) return;
+                list.push({ ...o, ghost: true });
+                if (!ghostNotified.has(uid)) {
+                    ghostNotified.add(uid);
+                    if (baselineDone) showToast(`Order #${o.orderId || o.id} was removed from the database by another app`, 'error');
+                }
+            });
+
+            // New order detection (only after BOTH databases delivered their first data)
+            let newCount = 0;
+            if (DB.core.loaded && DB.rider.loaded) {
+                if (!baselineDone) {
+                    list.forEach(o => knownUids.add(o.uid));
+                    baselineDone = true;
+                } else {
+                    list.forEach(o => {
+                        if (!o.ghost && !knownUids.has(o.uid)) { knownUids.add(o.uid); newCount++; }
+                    });
+                }
+            }
+            if (newCount > 0) {
+                unreadNewOrders += newCount;
+                playAlertSound();
+                showToast(newCount > 1 ? `🔔 ${newCount} New Orders Received!` : "?? New Order Received!", "success");
+                if (document.hidden) document.title = `(${unreadNewOrders}) New Order! - GMDS`;
+            }
+
+            // Newest first, using the real timestamp (works for numeric ids AND ids like DEL_1727...)
+            list.sort((a, b) => (orderTime(b) - orderTime(a)) || String(b.uid).localeCompare(String(a.uid)));
+
+            globalOrdersCache = list;
+            updateChips(coreCount, riderCount);
+            updateStats(list);
+            renderOrdersTable();
+        }
+
+        function updateChips(coreCount, riderCount) {
+            const part = (name, k, n) => DB[k].error
+                ? `<span class="text-red-600">${name}: ERROR</span>`
+                : (DB[k].loaded ? `${name}: ${n}` : `${name}: loading...`);
+            document.getElementById('db-chips').innerHTML = `${part('Core DB', 'core', coreCount)} &nbsp;•&nbsp; ${part('Rider DB', 'rider', riderCount)}`;
+        }
+
+        function updateStats(orders) {
+            const total = orders.length;
+            const paid = orders.filter(o => str(o.payMode).toUpperCase() === 'ONLINE').length;
+            const pending = orders.filter(o => statusKey(o) === 'pending').length;
+            ['', '-m'].forEach(sfx => {
+                document.getElementById('stat-total' + sfx).innerText = total;
+                document.getElementById('stat-paid' + sfx).innerText = paid;
+                document.getElementById('stat-pending' + sfx).innerText = pending;
+            });
+        }
+
+        // ==================== FILTERS ====================
+        function applyFilterStyles() {
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                const on = b.getAttribute('data-filter') === currentFilter;
+                b.className = "filter-btn px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap " +
+                    (on ? "active bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-800 hover:bg-white/50");
+            });
+        }
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                currentFilter = e.currentTarget.getAttribute('data-filter');
+                applyFilterStyles();
+                renderOrdersTable();
+            });
+        });
+        applyFilterStyles();
+
+        function matchesFilter(order, f) {
+            if (f === 'all') return true;
+            return statusKey(order) === f;
+        }
+
+        // ==================== ACTIONS ====================
+        const findOrder = uid => globalOrdersCache.find(o => o.uid === uid);
+
+        window.updateOrderStatus = function (selectElement) {
+            const order = findOrder(selectElement.dataset.uid);
+            if (!order || order.ghost) { showToast("Order not found in database", "error"); return; }
+            const newStatus = selectElement.value;
+            selectElement.disabled = true;
+            selectElement.classList.add('opacity-50');
+
+            const db = order.dbRefType === 'rider' ? riderDb : coreDb;
+            db.ref(`${order.dbPath}/${order.id}`).update({
+                status: newStatus,
+                riderStatus: newStatus,
+                isCancelled: newStatus === 'Cancelled',
+                statusUpdatedAt: Date.now()
+            })
+            .then(() => showToast(`Status updated to ${newStatus}`))
+            .catch(err => {
+                showToast("Failed to update status: " + ((err && err.message) || ''), "error");
+                selectElement.disabled = false;
+                selectElement.classList.remove('opacity-50');
+            });
+        };
+
+        window.deleteOrder = function (uid) {
+            const order = findOrder(uid);
+            if (!order) return;
+            if (!confirm("DANGER: Are you sure you want to permanently delete this order record?")) return;
+
+            adminDeleted.add(uid);
+            if (order.ghost) {          // already gone from DB, just clear it from the panel
+                lastSeen.delete(uid);
+                processMergedData();
+                showToast("Order cleared.");
+                return;
+            }
+            const db = order.dbRefType === 'rider' ? riderDb : coreDb;
+            db.ref(`${order.dbPath}/${order.id}`).remove()
+                .then(() => showToast("Order deleted successfully."))
+                .catch(() => { adminDeleted.delete(uid); showToast("Failed to delete order.", "error"); });
+        };
+
+        async function addMockOrder() {
+            try {
+                const mockKey = "DEL_" + Date.now();
+                const mockPayload = {
+                    orderId: mockKey,
+                    customer: "Test User (Live Sync)",
+                    phone: "9876543210",
+                    price: 150,
+                    payMode: "COD",
+                    razorpayPaymentId: "",
+                    status: "Pending",
+                    isCancelled: false,
+                    createdAt: Date.now(),
+                    timestamp: new Date().toLocaleString(),
+                    details: {
+                        type: "Parcel Delivery",
+                        pickup: "Fazilnagar Market",
+                        drop: "Gopalpur Station",
+                        pickupLat: 23.929795,
+                        pickupLng: 88.555238,
+                        dropLat: 23.930333,
+                        dropLng: 88.555929,
+                        totalFare: 150,
+                        distance: "1.2 KM"
+                    }
+                };
+                await riderDb.ref(`delivery_orders/${mockKey}`).set(mockPayload);
+                showToast("Test rider order added!", "success");
+            } catch (e) {
+                console.error(e);
+                showToast("Failed to add test order", "error");
+            }
+        }
+        document.getElementById('addMockBtn').addEventListener('click', addMockOrder);
+        document.getElementById('addMockBtnM').addEventListener('click', addMockOrder);
+
+        // ==================== TABLE RENDER ====================
+        function renderOrdersTable() {
+            const table = document.getElementById('ordersTableBody');
+
+            // filter counts
+            ['all', 'pending', 'active', 'delivered', 'cancelled'].forEach(f => {
+                const el = document.getElementById('fc-' + f);
+                if (el) el.innerText = globalOrdersCache.filter(o => matchesFilter(o, f)).length;
+            });
+
+            if (!DB.core.loaded && !DB.rider.loaded) return;   // keep the loader until first data
+
+            const filtered = globalOrdersCache.filter(o => matchesFilter(o, currentFilter));
+
+            if (filtered.length === 0) {
+                table.innerHTML = `<tr><td colspan="6" class="py-16 text-center text-slate-400 font-bold"><div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fas fa-box-open text-3xl"></i></div> No orders found for this filter.</td></tr>`;
+                return;
+            }
+
+            const nowMs = Date.now();
+            table.innerHTML = filtered.map(order => {
+                try { return renderRow(order, nowMs); }
+                catch (err) {
+                    console.error("Row render error", order, err);
+                    return `<tr class="bg-red-50"><td colspan="6" class="py-3 px-5 text-xs font-bold text-red-600">Could not display order #${esc(order.orderId || order.id)} (${esc(order.dbRefType)}) — ${esc(err.message)}</td></tr>`;
+                }
+            }).join('');
+        }
+
+        function renderRow(order, nowMs) {
+            const kind = getKind(order);
+            const d = (order.details && typeof order.details === 'object') ? order.details : {};
+            const t = orderTime(order);
+            const isNew = !order.ghost && t > 0 && (nowMs - t) < 60000;
+            const sk = statusKey(order);
+            const currentStatus = statusOf(order);
+
+            // ----- service block -----
+            let sType = "Unknown Service";
+            let sIconCls = "fa-asterisk";
+            let sIconStyle = "text-slate-400 bg-slate-50 border-slate-100";
+            let serviceDetailsHTML = "";
+
+            if (kind === 'food') {
+                sType = "Food Delivery";
+                sIconCls = "fa-utensils"; sIconStyle = "text-orange-500 bg-orange-50 border-orange-100";
+                serviceDetailsHTML = `<span class="text-[11px] text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded shadow-sm border border-slate-200">${toArray(order.items).length} Items</span>`;
+            } else if (kind === 'ride') {
+                const rideType = str(pick(d.type, order.type, "Ride / Parcel"));
+                const pickupLoc = str(pick(d.pickup, order.pickup, order.pickupLocation, 'Not provided'));
+                const dropLoc = str(pick(d.drop, order.drop, order.dropLocation, 'Not provided'));
+                const dist = str(pick(d.distance, order.distance, ''));
+                const isParcel = rideType.toLowerCase().includes('parcel');
+                sType = rideType;
+                sIconCls = isParcel ? "fa-box" : "fa-motorcycle";
+                sIconStyle = isParcel ? "text-blue-500 bg-blue-50 border-blue-100" : "text-indigo-500 bg-indigo-50 border-indigo-100";
+                const iName = str(pick(d.itemName, order.itemName, 'Item'));
+                const passCount = str(pick(d.passengers, order.passengers, 1));
+                const extraSpecs = isParcel
+                    ? `<span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm">📦 ${esc(iName)}</span>`
+                    : `<span class="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm">👥 ${esc(passCount)} Pax</span>`;
+                serviceDetailsHTML = `
+                    <div class="flex flex-col gap-1 mt-1">
+                        <div class="text-[10px] text-slate-600 font-semibold flex items-start gap-1">
+                            <i class="fas fa-circle text-green-500 text-[8px] mt-0.5"></i>
+                            <span class="truncate max-w-[200px] block" title="${esc(pickupLoc)}">${esc(pickupLoc)}</span>
+                        </div>
+                        <div class="text-[10px] text-slate-600 font-semibold flex items-start gap-1">
+                            <i class="fas fa-location-dot text-red-500 text-[8px] mt-0.5"></i>
+                            <span class="truncate max-w-[200px] block" title="${esc(dropLoc)}">${esc(dropLoc)}</span>
+                        </div>
+                        <div class="mt-1 flex items-center gap-2">
+                            ${extraSpecs}
+                            ${dist ? `<span class="text-[9px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded shadow-sm"><i class="fas fa-route"></i> ${esc(dist)}</span>` : ''}
+                        </div>
+                    </div>`;
+            } else if (kind === 'house') {
+                sType = str(order.service) || "House Service";
+                sIconCls = "fa-tools"; sIconStyle = "text-emerald-500 bg-emerald-50 border-emerald-100";
+                serviceDetailsHTML = `<span class="text-[11px] text-slate-500 font-semibold">${esc(order.professional || 'Expert')}</span>`;
+            } else if (kind === 'seba') {
+                sType = str(order.service) || "Digital Seba";
+                sIconCls = "fa-laptop-code"; sIconStyle = "text-teal-500 bg-teal-50 border-teal-100";
+                serviceDetailsHTML = `<span class="text-[11px] text-slate-500 font-semibold">${esc(order.category || '-')}</span>`;
+            } else {
+                sType = str(order.type) || "Unknown Service";
+            }
+
+            // ----- payment -----
+            const totalAmount = pick(order.grandTotal, order.totalFare, d.totalFare, order.price, order.total, 0);
+            let payUI;
+            if (str(order.payMode).toUpperCase() === 'ONLINE') {
+                const txnId = order.razorpayPaymentId || order.txnId || 'N/A';
+                payUI = `
+                    <div class="text-base font-black text-slate-800">₹${esc(totalAmount)}</div>
+                    <div class="mt-1 inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9px] px-2 py-1 rounded-md font-black uppercase tracking-wider shadow-sm">
+                        <i class="fas fa-circle-check"></i> Paid Online
+                    </div>
+                    <div class="text-[9.5px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded mt-1 font-mono font-bold break-all">Txn: ${esc(txnId)}</div>`;
+            } else {
+                payUI = `
+                    <div class="text-base font-black text-slate-800">₹${esc(totalAmount)}</div>
+                    <div class="mt-1 inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[9px] px-2 py-1 rounded-md font-black uppercase tracking-wider shadow-sm">
+                        <i class="fas fa-wallet"></i> Cash / COD
+                    </div>`;
+            }
+
+            // ----- row style -----
+            let rowClass = "hover:bg-slate-50 transition-colors border-b border-slate-100 border-l-4 border-l-transparent ";
+            if (order.ghost) rowClass += "ghost-row ";
+            else {
+                if (isNew) rowClass += "new-order-row ";
+                if (sk === 'cancelled') rowClass += "cancelled-row ";
+                if (sk === 'delivered') rowClass += "completed-row bg-slate-50/50 ";
+            }
+
+            // ----- status UI -----
+            let statusUI = "";
+            if (order.ghost) {
+                statusUI = `<div class="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-2 rounded-xl text-[10px] font-black text-center shadow-sm"><i class="fas fa-triangle-exclamation"></i> Removed from database<div class="font-bold opacity-70 mt-0.5">Last status: ${esc(currentStatus)}</div></div>`;
+            } else if (sk === 'cancelled') {
+                statusUI = `<div class="bg-red-50 text-red-600 border border-red-200 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase text-center flex items-center justify-center gap-1.5 shadow-sm"><i class="fas fa-ban"></i> CANCELLED</div>`;
+            } else {
+                const lc = currentStatus.toLowerCase();
+                const opts = STATUS_OPTIONS.slice();
+                if (!opts.some(o => o.toLowerCase() === lc)) opts.unshift(currentStatus);   // unknown status still displays correctly
+                let selectBg = 'bg-white border-slate-200 text-slate-700';
+                if (sk === 'delivered') selectBg = 'bg-emerald-50 border-emerald-200 text-emerald-700 font-black';
+                else if (lc === 'pickedup' || lc === 'out for delivery') selectBg = 'bg-indigo-50 border-indigo-200 text-indigo-700 font-black';
+                else if (sk !== 'pending') selectBg = 'bg-blue-50 border-blue-200 text-blue-700 font-black';
+
+                statusUI = `
+                    <div class="relative max-w-[140px] mx-auto">
+                        <select data-uid="${esc(order.uid)}" onchange="updateOrderStatus(this)" class="w-full ${selectBg} border-2 rounded-xl text-[11px] font-bold px-3 py-2.5 outline-none cursor-pointer hover:shadow-md transition-all focus:border-primary appearance-none">
+                            ${opts.map(opt => `<option value="${esc(opt)}" ${opt.toLowerCase() === lc ? 'selected' : ''}>${esc(opt.toUpperCase())}</option>`).join('')}
+                        </select>
+                    </div>`;
+            }
+
+            // ----- rider block -----
+            let rName = order.riderName || order.assignedRider;
+            if (rName && typeof rName === 'object') rName = rName.name || rName.riderName || '';
+            const rPhone = order.riderPhone || '';
+            const riderUI = rName
+                ? `<div class="mt-2 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-center">
+                        <div class="text-[10px] font-bold text-slate-700"><i class="fas fa-motorcycle text-indigo-500"></i> ${esc(rName)}</div>
+                        ${rPhone ? `<div class="text-[9px] text-slate-500">${esc(rPhone)}</div>` : ''}
+                   </div>`
+                : `<div class="mt-2 text-[10px] text-slate-400 font-bold text-center border border-dashed border-slate-200 rounded-lg px-2 py-1">Unassigned</div>`;
+
+            const srcBadge = order.dbRefType === 'rider'
+                ? `<span class="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Rider</span>`
+                : `<span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Core</span>`;
+
+            return `
+                <tr class="${rowClass}">
+                    <td class="py-4 px-5 align-top">
+                        <div class="font-mono text-sm font-black text-slate-700 break-all flex items-center gap-2 flex-wrap">
+                            #${esc(order.orderId || order.id)}
+                            ${isNew ? '<span class="bg-emerald-500 text-white px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider animate-pulse">New</span>' : ''}
+                            ${srcBadge}
+                        </div>
+                        <div class="text-[10px] text-slate-400 mt-1 font-bold"><i class="far fa-clock"></i> ${esc(dateText(order, t))}</div>
+                    </td>
+                    <td class="py-4 px-5 align-top">
+                        <div class="font-extrabold text-sm text-slate-800">${esc(order.user || order.customer || 'Unknown')}</div>
+                        <div class="text-xs font-bold text-slate-500 mt-1 flex items-center gap-1"><i class="fas fa-phone-alt text-[10px] text-slate-400"></i> ${esc(order.phone || order.receiverPhone || d.receiverPhone || '-')}</div>
+                    </td>
+                    <td class="py-4 px-5 align-top">
+                        <div class="font-bold text-xs text-slate-800 flex items-center gap-2 mb-1.5">
+                            <div class="w-7 h-7 rounded-lg flex items-center justify-center border ${sIconStyle}"><i class="fas ${sIconCls}"></i></div>
+                            ${esc(sType)}
+                        </div>
+                        ${serviceDetailsHTML}
+                    </td>
+                    <td class="py-4 px-5 align-top">${payUI}</td>
+                    <td class="py-4 px-5 align-top text-center">
+                        ${statusUI}
+                        ${riderUI}
+                    </td>
+                    <td class="py-4 px-5 align-top text-center">
+                        <button data-uid="${esc(order.uid)}" onclick="previewWhatsApp(this.dataset.uid)" class="w-full bg-white border-2 border-[#25D366]/30 hover:border-[#25D366] text-[#25D366] px-3 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 mb-2 cursor-pointer">
+                            <i class="fab fa-whatsapp text-sm"></i> WhatsApp
+                        </button>
+                        <button data-uid="${esc(order.uid)}" onclick="deleteOrder(this.dataset.uid)" class="w-full text-slate-400 hover:text-red-600 bg-transparent hover:bg-red-50 px-3 py-2 rounded-xl text-[10px] font-bold uppercase transition-all flex items-center justify-center gap-1.5 border border-transparent hover:border-red-100 cursor-pointer">
+                            <i class="fas fa-trash-can"></i> ${order.ghost ? 'Clear' : 'Delete'}
+                        </button>
+                    </td>
+                </tr>`;
+        }
+
+        // ==================== SMART WHATSAPP DISPATCHER ====================
+        let currentGeneratedText = "";
+
+        function waNumber(p) {
+            let digits = str(p).replace(/\D/g, '');
+            if (digits.length === 10) digits = '91' + digits;
+            return digits || RIDER_WA_NUMBER;
+        }
+
+        function getMapLink(order) {
+            if (str(order.gpsLocation).includes('http')) return order.gpsLocation;
+            if (str(order.location).includes('http')) return order.location;
+            if (order.lat && order.lng) return `https://maps.google.com/?q=${order.lat},${order.lng}`;
+            return 'Not Provided';
+        }
+
+        window.previewWhatsApp = function (uid) {
+            const order = findOrder(uid);
+            if (!order) return;
+
+            currentGeneratedText = generateWhatsAppText(order);
+            document.getElementById('wa-text-preview').value = currentGeneratedText;
+
+            const targetNumber = waNumber(order.riderPhone || RIDER_WA_NUMBER);
+            document.getElementById('wa-target-label').innerText = "Dispatching to: +" + targetNumber;
+            document.getElementById('btn-wa-direct').onclick = () => {
+                const text = document.getElementById('wa-text-preview').value;   // sends edited text too
+                window.open(`https://wa.me/${targetNumber}?text=${encodeURIComponent(text)}`, '_blank');
+            };
+            document.getElementById('wa-preview-modal').classList.remove('hidden');
+        };
+
+        window.closeWaModal = function () {
+            document.getElementById('wa-preview-modal').classList.add('hidden');
+        };
+
+        window.copyWaText = function () {
+            const textArea = document.getElementById('wa-text-preview');
+            textArea.select();
+            const val = textArea.value;
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(val).then(() => showToast("Receipt copied to clipboard!", "success"));
+            } else {
+                document.execCommand('copy');
+                showToast("Receipt copied to clipboard!", "success");
+            }
+        };
+
+        function generateWhatsAppText(order) {
+            let text = "";
+            const oId = order.orderId || order.id;
+            const mapLink = getMapLink(order);
+            const kind = getKind(order);
+            const d = (order.details && typeof order.details === 'object') ? order.details : {};
+            const SEP = `-----------------------------------\n`;
+
+            if (kind === 'food') {
+                const items = toArray(order.items);
+                text += `*📦 NEW FOOD ORDER - GMDS*\n`;
+                text += `*🆔 Order ID:* ${oId}\n` + SEP;
+
+                text += `*🟢 PICK-UP LOCATION(S):*\n`;
+                [...new Set(items.map(i => i.hotel || 'GMDS Partner'))].forEach(hotel => {
+                    text += `🏪 *${hotel}*\n`;
+                    text += `📍 Hotel Map: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hotel)}\n`;
+                });
+                text += SEP;
+
+                text += `*🔴 CUSTOMER DROP-OFF:*\n`;
+                text += `*👤 Customer:* ${order.user || order.customer || 'Unknown'}\n`;
+                text += `*📞 Phone:* ${order.phone || 'N/A'}\n`;
+                if (order.remoteOrder && order.receiverPhone) {
+                    text += `*📱 Receiver Phone:* ${order.receiverPhone} (Family Order)\n`;
+                }
+                text += `*🏠 Address:* ${order.address || 'N/A'}\n`;
+                text += `*📍 Drop Map:* ${mapLink}\n`;
+                if (order.distance) text += `*📏 Distance:* ${order.distance}\n`;
+                if (order.routeMap) text += `*🗺️ Route Map:* ${order.routeMap}\n`;
+                text += SEP;
+
+                text += `*🛒 Order Details:*\n`;
+                items.forEach(item => {
+                    const qty = item.qty || 1;
+                    const itemTotal = (Number(item.price) || 0) * Number(qty);
+                    text += `• *${item.name}* (Qty: ${qty} x ₹${item.price || 0}) = *₹${itemTotal}*\n`;
+                    text += `  Hotel: _${item.hotel || 'GMDS Partner'}_\n\n`;
+                });
+
+                text += SEP;
+                text += `*💵 ITEM TOTAL:* ₹${order.subtotal || 0}\n`;
+                text += `*🛵 DELIVERY CHARGE:* ₹${order.deliveryFee || 0}\n`;
+                text += `*💰 GRAND TOTAL TO PAY:* ₹${order.grandTotal || order.total || 0}\n`;
+                text += `*💳 PAYMENT MODE:* ${order.payMode || 'COD'}\n`;
+                if (str(order.payMode).toUpperCase() === 'ONLINE' && (order.razorpayPaymentId || order.txnId)) {
+                    text += `*✅ PAID ONLINE - TXN ID:* ${order.razorpayPaymentId || order.txnId}\n`;
+                }
+                text += SEP + `_Please confirm my order. Thank you!_`;
+            }
+
+            else if (kind === 'ride') {
+                const sType = str(pick(d.type, order.type, 'RIDE BOOKING'));
+                text += `*🚀 GMDS NEW ${sType.toUpperCase()}*\n`;
+                text += `*🆔 Order ID:* ${oId}\n` + SEP;
+                text += `*👤 Name:* ${order.customer || order.user || 'Unknown'}\n`;
+                text += `*📞 Phone:* ${order.phone || 'N/A'}\n\n`;
+
+                const pickupLoc = pick(d.pickup, order.pickup, order.pickupLocation, 'N/A');
+                const dropLoc = pick(d.drop, order.drop, order.dropLocation, 'N/A');
+                const dist = pick(d.distance, order.distance, 'N/A');
+
+                const pLat = pick(d.pickupLat, order.pickupLat, '');
+                const pLng = pick(d.pickupLng, order.pickupLng, '');
+                const dLat = pick(d.dropLat, order.dropLat, '');
+                const dLng = pick(d.dropLng, order.dropLng, '');
+
+                const pickupMapLink = (pLat !== '' && pLng !== '') ? `https://www.google.com/maps/search/?api=1&query=${pLat},${pLng}` : 'Not Provided';
+                const dropMapLink = (dLat !== '' && dLng !== '') ? `https://www.google.com/maps/search/?api=1&query=${dLat},${dLng}` : 'Not Provided';
+
+                text += `*🟢 Pick-up:* ${pickupLoc}\n`;
+                text += `*📍 Pick-up Map:* ${pickupMapLink}\n\n`;
+                text += `*🔴 Drop-off:* ${dropLoc}\n`;
+                text += `*📍 Drop-off Map:* ${dropMapLink}\n\n`;
+                text += `*🛣️ Distance:* ${dist}\n\n`;
+
+                if (sType.toLowerCase().includes('parcel')) {
+                    text += `*📦 Item:* ${pick(d.itemName, order.itemName, 'Item')}\n*📱 Receiver:* ${pick(d.receiverPhone, order.receiverPhone, 'N/A')}\n`;
+                } else {
+                    text += `*👥 Passengers:* ${pick(d.passengers, order.passengers, 1)} Person(s)\n`;
+                    text += `*🛵 Vehicle:* ${pick(d.vehicle, 'Bike')}\n`;
+                }
+
+                text += SEP;
+                text += `*💰 TOTAL AMOUNT:* ₹${pick(d.totalFare, order.totalFare, order.price, order.grandTotal, 0)}\n`;
+                text += `*💳 PAYMENT MODE:* ${order.payMode || 'COD'}\n`;
+                if (str(order.payMode).toUpperCase() === 'ONLINE' && (order.razorpayPaymentId || order.txnId)) {
+                    text += `*✅ PAID ONLINE - TXN ID:* ${order.razorpayPaymentId || order.txnId}\n`;
+                }
+                text += SEP + `_Please confirm my booking ASAP._`;
+            }
+
+            else if (kind === 'seba') {
+                text += `*💻 GMDS DIGITAL SEBA BOOKING*\n`;
+                text += `*🆔 Order ID:* ${oId}\n` + SEP;
+                text += `*👤 Customer:* ${order.customer || order.user || 'Unknown'}\n`;
+                text += `*📞 Phone:* ${order.phone || 'N/A'}\n`;
+                text += `*📍 Map Link:* ${mapLink}\n` + SEP;
+                text += `*🛠️ Service Type:* ${order.service || 'N/A'}\n`;
+                text += `*📁 Category:* ${order.category || 'N/A'}\n` + SEP;
+                text += `*💰 ESTIMATED CHARGE:* ${order.price || 'Variable'}\n`;
+                text += `*💳 PAYMENT MODE:* ${order.payMode || 'COD'}\n`;
+                if (str(order.payMode).toUpperCase() === 'ONLINE' && (order.razorpayPaymentId || order.txnId)) {
+                    text += `*✅ PAID ONLINE - TXN ID:* ${order.razorpayPaymentId || order.txnId}\n`;
+                }
+                text += SEP + `_Please process my request._`;
+            }
+
+            else if (kind === 'house') {
+                const isSalon = order.problem === "N/A" || (order.service && String(order.service).toLowerCase().includes("salon"));
+                text += `*${isSalon ? '✂️ VIP SALON APPOINTMENT' : '🔧 GMDS REPAIR SERVICE'}*\n`;
+                text += `*🆔 Order ID:* ${oId}\n` + SEP;
+                text += `*👤 Customer:* ${order.customer || order.user || 'Unknown'}\n`;
+                text += `*📞 Phone:* ${order.phone || 'N/A'}\n`;
+                text += `*📍 Map Link:* ${mapLink}\n` + SEP;
+                text += `*⚙️ Service Type:* ${order.service || 'N/A'}\n`;
+                if (isSalon) {
+                    text += `*💈 Salon Name:* ${order.professional || 'N/A'}\n`;
+                    text += `*📍 Salon Map:* https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.professional || '')}\n`;
+                } else {
+                    text += `*📝 Problem Details:* ${order.problem || 'N/A'}\n`;
+                    text += `*👨‍🔧 Assigned To:* ${order.professional || 'GMDS Expert'}\n`;
+                }
+                text += `*📅 Date & Time:* ${order.appointmentTime || 'N/A'}\n`;
+                text += SEP + `_Please confirm my booking ASAP._`;
+            }
+
+            else {
+                text += `*📋 GMDS ORDER*\n`;
+                text += `*🆔 Order ID:* ${oId}\n` + SEP;
+                text += `*👤 Customer:* ${order.customer || order.user || 'Unknown'}\n`;
+                text += `*📞 Phone:* ${order.phone || 'N/A'}\n`;
+                text += `*💰 Amount:* ₹${pick(order.grandTotal, order.total, order.price, 0)}\n`;
+                text += `*💳 Payment:* ${order.payMode || 'COD'}\n`;
+            }
+
+            return text.trim();
+        }
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    </script>
+</body>
+</html>
